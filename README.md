@@ -4,6 +4,7 @@ A simple to use TCP/IP library for communication between your applications and o
 ### Example TCP Client Usage
 
 ``` cpp
+#include <iostream>
 #include "tcp_sockets.h"
 
 /* also see tcp_client::write(void *data, const size_t &size, const size_t &count)
@@ -29,6 +30,7 @@ int main(){
 ### Example TCP Server Usage
 
 ``` cpp
+#include <iostream>
 #include <string>
 #include "tcp_sockets.h"
 
