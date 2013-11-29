@@ -1,4 +1,4 @@
-### TCPSockets : A generic TCP/IP class for Linux
+### TCPSocket : A simple TCP/IP class for Linux
 A simple to use TCP/IP library for communication between your applications and other TCP/IP speakers.
 
 ### Example TCP Client Usage
