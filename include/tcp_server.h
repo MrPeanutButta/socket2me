@@ -54,7 +54,7 @@ public:
 
     /* sets function to call when data is
      * read form the stream */
-    void set_read_handler(read_handler reader) {
+    void set_read_callback(read_handler reader) {
         tcp_server::my_reader = reader;
     }
 
@@ -62,6 +62,7 @@ public:
     static connection_threads server_connections;
 
     // kill all listeners and existing connections
+
     void kill_service(void) {
         tcp_server::kill = true;
     }
@@ -71,6 +72,7 @@ public:
     }
 
     // sets max number of connections we intend to buffer
+
     void set_max_conn_buffer(const int conns) {
         tcp_server::max_conn_buffered = conns;
     }

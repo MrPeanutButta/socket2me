@@ -45,7 +45,7 @@ int main(){
 
     TCPSocket tcpServer;
     // set callback for when data is read from the stream
-    tcpServer.set_read_handler(test2);
+    tcpServer.set_read_callback(test2);
     // listen on loopback for port 666 connections
     tcpServer.listen_for_connections("127.0.0.1", "666");
     // default EOL char is '\n' but can be set

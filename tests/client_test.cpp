@@ -30,12 +30,12 @@ void test1() {
     TCPSocket tcpServer;
     TCPSocket tcpClient;
 
-    tcpServer.set_read_handler(test2);
+    tcpServer.set_read_callback(test2);
     tcpServer.listen_for_connections("127.0.0.1", "666");
     tcpServer.set_EOL_char('\n');
 
     sleep(5);
-    
+
     tcpClient.connect("127.0.0.1", "666");
     if (tcpClient.connected()) {
         tcpClient.write("*************write from client test*************\n");

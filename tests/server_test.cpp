@@ -29,7 +29,7 @@ void test1() {
     std::cout << "server_test test 1" << std::endl;
     TCPSocket tcp;
 
-    tcp.set_read_handler(test2);
+    tcp.set_read_callback(test2);
     tcp.listen_for_connections("127.0.0.1", "666");
     tcp.set_EOL_char('\r');
 
