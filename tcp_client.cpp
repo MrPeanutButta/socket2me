@@ -244,6 +244,16 @@ size_t tcp_client::read(void *data, const size_t &size,
     return fread(data, size, count, this->rx);
 }
 
+std::string tcp_client::readline(void) {
+    std::string read_string;
+
+    do {
+        read_string += this->read_char();
+    } while (read_string.back() != '\n');
+
+    return read_string;
+}
+
 /** Read single char from rx stream.
  */
 char tcp_client::read_char(void) {

@@ -1,5 +1,8 @@
-### TCPSocket : A simple TCP/IP class for Linux
+### TCPSocket : A simple C++ class for TCP/IP on Linux
 A simple to use TCP/IP library for communication between your applications and other TCP/IP speakers.
+This project has been split from a larger project. I thought this was a bit useful for using in other projects. Hopefully others may find it useful.
+
+[https://github.com/ahebert/TCPSockets](https://github.com/ahebert/TCPSockets)
 
 ### Example TCP Client Usage
 
@@ -17,8 +20,13 @@ int main(){
 
     // if connected we can write data
     if (tcpClient.connected()) {
+        // writes will buffer until send() is called
         tcpClient.write("*************write from client test*************\n");
         tcpClient.send();
+
+        // read a response
+        std::cout << tcpClient.readline() << std::endl;
+
         tcpClient.disconnect();
     }
 

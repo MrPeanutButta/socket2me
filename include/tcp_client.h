@@ -38,6 +38,8 @@ public:
     bool set_tcp_rx_buffer_size(const size_t &);
 
     size_t read(void *, const size_t &, const size_t &);
+    std::string readline(void);
+
     char read_char(void);
 
     size_t write(void *data, const size_t &size, const size_t &count);
