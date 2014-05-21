@@ -54,7 +54,7 @@ tcp_server::~tcp_server() {
  *
  * creates socket and binds.
  */
-bool tcp_server::listen_for_connections(const std::string host,
+bool tcp_server::listen(const std::string host,
         const std::string port) {
 
     get_addr_info(host, port);
