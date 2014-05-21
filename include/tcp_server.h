@@ -43,7 +43,7 @@ public:
     virtual ~tcp_server() = 0;
 
     // listens for incomming connections
-    bool listen_for_connections(const std::string host,
+    bool listen(const std::string host,
             const std::string port);
 
     /* sets function to call when a new

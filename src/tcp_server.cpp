@@ -141,16 +141,12 @@ void tcp_server::listen_loop(const int &socket,
         } else {
 
             // success, create new thread to manage connection
-            tcp_server::server_connections.push_back(nullptr);
-
-            std::thread *__t = tcp_server::server_connections.back();
-
-            __t = new std::thread(
+            tcp_server::server_connections.push_back(new std::thread(
                     conn,
-                    __t, client_socket);
+                    nullptr, client_socket));
 
-            // detach before delete
-            __t->detach();
+            tcp_server::server_connections.back()->detach();
+
         }
     }
 
