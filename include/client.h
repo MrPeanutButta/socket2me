@@ -57,7 +57,7 @@ namespace log2 {
             size_t write128(uint128_t bytes16);
             size_t write64(uint64_t bytes8);
             size_t write32(uint32_t bytes4);
-            size_t write16(uint16_t byte2);
+            size_t write16(uint16_t bytes2);
 
             size_t write32(uint8_t byte1, uint8_t byte2, uint8_t byte3, uint8_t byte4);
             size_t write24(uint8_t byte1, uint8_t byte2, uint8_t byte3);

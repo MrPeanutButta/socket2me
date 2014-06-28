@@ -488,7 +488,11 @@ namespace log2 {
          * and empty buffer.
          */
         int client::rx_flush(void) {
-            return fflush(this->rx);
+            this->lock();
+            int rc = fflush(this->rx);
+            this->unlock();
+            
+            return rc;
         }
     }
 }
