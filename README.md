@@ -1,19 +1,14 @@
-### TCPSocket : A simple C++ class for TCP/IP on Linux
+### log2::tcp::socket : A simple C++ class for TCP/IP on Linux
 A simple to use TCP/IP library for communication between your applications and other TCP/IP speakers.
 This project has been split from a larger project. I thought this was a bit useful for using in other projects. Hopefully others may find it useful.
-
-[https://github.com/ahebert/TCPSockets](https://github.com/ahebert/TCPSockets)
 
 ### Example TCP Client Usage
 
 ``` cpp
-#include "tcp_sockets.h"
-
-/* also see tcp_client::write(void *data, const size_t &size, const size_t &count)
- * for writing binary data to the stream. */
+#include "tcp.h"
 
 int main(){
-    TCPSocket tcpClient;
+    log2::tcp::socket tcpClient;
 
     // connect to loopback port 666
     tcpClient.connect("127.0.0.1", "666");
@@ -39,25 +34,25 @@ int main(){
 ``` cpp
 #include <iostream>
 #include <string>
-#include "tcp_sockets.h"
+#include "tcp.h"
 
 std::string test2(std::string text) {
     std::cout << "server test 2" << std::endl;
     std::cout << "test2 read " << text << std::endl;
     std::cout << "returning string";
 
-    return "*************this is a test return*************";
+    return "*************this is a test return*************\n";
 }
 
 int main(){
 
-    TCPSocket tcpServer;
+    log2::tcp::socket tcpServer;
+	// default EOL char is '\n' but can be set
+    log2::tcp::EOL = '\n';
     // set callback for when data is read from the stream
     tcpServer.set_read_callback(test2);
     // listen on loopback for port 666 connections
-    tcpServer.listen_for_connections("127.0.0.1", "666");
-    // default EOL char is '\n' but can be set
-    tcpServer.set_EOL_char('\n');
+    tcpServer.listen("127.0.0.1", "666");
 
     return 0;
 }
