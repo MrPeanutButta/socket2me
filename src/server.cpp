@@ -24,6 +24,7 @@
 #include <netinet/tcp.h>
 #include <system_error>
 #include "server.h"
+#include "tcp.h"
 
 namespace log2 {
     namespace tcp {
@@ -32,6 +33,8 @@ namespace log2 {
         bool server::kill_ = false;
         read_handler server::my_reader = nullptr;
         int server::max_conn_buffered = 5;
+        unsigned char server::md5_auth_hash_[MD5_HASH_SIZE];
+        auth server::srv_auth_type_;
 
         server::server() : client() {
             my_connection = &server::connection_loop;
@@ -42,11 +45,6 @@ namespace log2 {
         }
 
         server::~server() {
-           /* if (server_ != nullptr) {
-//                delete server_;
-                server_ = nullptr;
-            }*/
-
             server::kill_ = true;
             server::connections.clear();
         }
@@ -81,7 +79,7 @@ namespace log2 {
         void server::bind(void) {
 
             for (rp = results; rp != nullptr; rp = rp->ai_next) {
-                socket_ = socket(rp->ai_family, rp->ai_socktype,
+                socket_ = ::socket(rp->ai_family, rp->ai_socktype,
                         rp->ai_protocol);
                 if (socket_ == -1)
                     continue;
@@ -143,7 +141,7 @@ namespace log2 {
 
                     // success, create new thread to manage connection
                     server::connections.push_back(
-                    std::shared_ptr<std::thread>(new std::thread(
+                            std::shared_ptr<std::thread>(new std::thread(
                             conn,
                             nullptr, client_socket)));
 
@@ -164,70 +162,81 @@ namespace log2 {
         void server::connection_loop(std::thread *connection_thread, int client_socket) {
 
             // socket file streams
-            FILE *c_tx, *c_rx = nullptr;
+            full_duplex duplex;
 
             // open stream for write
-            if (nullptr == (c_tx = fdopen(client_socket, "w"))) {
+            if (nullptr == (duplex.tx = fdopen(client_socket, "w"))) {
                 close(client_socket);
                 syslog(LOG_DEBUG, "unable to open TX stream");
                 throw std::system_error(errno, std::system_category());
             }
 
             // open stream for read
-            if (nullptr == (c_rx = fdopen(client_socket, "r"))) {
+            if (nullptr == (duplex.rx = fdopen(client_socket, "r"))) {
                 close(client_socket);
                 syslog(LOG_DEBUG, "unable to open RX stream");
                 throw std::system_error(errno, std::system_category());
             }
 
-            std::string _cmd_return;
-            std::string stream;
+            if (server::authorized(&duplex)) {
 
-            // while connected and BGP still running.
-            // feof() should be safe for local socket.
-            while (!feof(c_rx) && !server::kill_) {
+                std::string _cmd_return;
+                std::string stream;
 
-                // get chars from stream
-                do {
-                    stream += fgetc(c_rx);
-                } while (stream.back() != tcp::EOL);
+                // while connected and BGP still running.
+                // feof() should be safe for local socket.
+                while (!feof(duplex.rx) && !server::kill_) {
 
-                // EOF == disconnect
-                if (stream.back() == EOF) break;
+                    // get chars from stream
+                    do {
+                        stream += fgetc(duplex.rx);
+                    } while (stream.back() != tcp::EOL);
 
-                if (stream.size() > 0) {
+                    // EOF == disconnect
+                    if (stream.back() == EOF) break;
 
-                    // call read handler.
-                    if (my_reader != nullptr) {
-                        _cmd_return = server::my_reader(stream);
-                    } else {
-                        syslog(LOG_DEBUG,
-                                "my_reader == nullptr, set_read_handler first");
-                    }
+                    if (stream.size() > 0) {
 
-                    stream.clear();
+                        // call read handler.
+                        if (my_reader != nullptr) {
+                            _cmd_return = server::my_reader(stream);
+                        } else {
+                            syslog(LOG_DEBUG,
+                                    "my_reader == nullptr, set_read_handler first");
+                        }
 
-                    /* write the length of ret_val first.
-                     * CLI is expected [len,data].
-                     * increased to 32bit value for larger outputs */
-                    if (_cmd_return.length() > 0) {
-                        // write data
-                        fwrite(_cmd_return.c_str(), 1, _cmd_return.length(), c_tx);
-                        // send
-                        fflush(c_tx);
-                        _cmd_return.clear();
+                        stream.clear();
+
+                        /* write the length of ret_val first.
+                         * CLI is expected [len,data].
+                         * increased to 32bit value for larger outputs */
+                        if (_cmd_return.length() > 0) {
+                            // write data
+                            fwrite(_cmd_return.c_str(), 1, _cmd_return.length(), duplex.tx);
+                            // send
+                            fflush(duplex.tx);
+                            _cmd_return.clear();
+                        }
                     }
                 }
             }
 
-            fclose(c_tx);
-            fclose(c_rx);
+            fclose(duplex.tx);
+            fclose(duplex.rx);
             close(client_socket);
 
             if (connection_thread != nullptr) {
                 delete connection_thread;
                 connection_thread = nullptr;
             }
+        }
+
+        bool server::authorized(full_duplex *f_dup) {
+            if (server::srv_auth_type_ == auth::OFF) return true;
+
+            unsigned char token[MD5_HASH_SIZE];
+            fread(&token, sizeof (token), 1, f_dup->rx);
+            return (!memcmp(&server::md5_auth_hash_, &token, MD5_HASH_SIZE));
         }
     }
 }

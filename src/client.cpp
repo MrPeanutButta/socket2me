@@ -364,9 +364,7 @@ namespace log2 {
                 return 0;
             }
 
-            this->lock();
-            size_t write_ = fprintf(this->tx, "%c%c%c%c", byte1, byte2, byte3, byte4);
-            this->unlock();
+            size_t write_ = fprintf(this->tx, "%c%c%c%c", byte1, byte2, byte3, byte4);           
 
             return write_;
         }
@@ -377,9 +375,7 @@ namespace log2 {
                 return 0;
             }
 
-            this->lock();
             size_t write_ = this->write((uint8_t *) bytes16, sizeof (uint64_t) * 2);
-            this->unlock();
 
             return write_;
         }
@@ -390,9 +386,7 @@ namespace log2 {
                 return 0;
             }
 
-            this->lock();
             size_t write_ = this->write((uint8_t *) & bytes8, sizeof (uint64_t));
-            this->unlock();
 
             return write_;
         }
@@ -403,9 +397,7 @@ namespace log2 {
                 return 0;
             }
 
-            this->lock();
             size_t write_ = this->write((uint8_t *) & bytes4, sizeof (uint32_t));
-            this->unlock();
 
             return write_;
         }
@@ -416,9 +408,7 @@ namespace log2 {
                 return 0;
             }
 
-            this->lock();
             size_t write_ = this->write((uint8_t *) & bytes2, sizeof (uint16_t));
-            this->unlock();
 
             return write_;
         }
@@ -430,9 +420,7 @@ namespace log2 {
                 return 0;
             }
 
-            this->lock();
             size_t write_ = fprintf(this->tx, "%c%c%c", byte1, byte2, byte3);
-            this->unlock();
 
             return write_;
         }
@@ -448,9 +436,7 @@ namespace log2 {
                 return 0;
             }
 
-            this->lock();
             size_t write_ = fprintf(this->tx, "%c%c", byte1, byte2);
-            this->unlock();
 
             return write_;
         }
@@ -462,9 +448,7 @@ namespace log2 {
                 return 0;
             }
 
-            this->lock();
             size_t write_ = fprintf(this->tx, "%c", byte);
-            this->unlock();
 
             return write_;
         }
