@@ -94,7 +94,7 @@ namespace log2 {
             bool get_addr_info(const std::string host, const std::string port);
 
             friend class server;
-
+            
             addrinfo hints;
             addrinfo *results, *rp;
 
