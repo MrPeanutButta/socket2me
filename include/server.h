@@ -26,7 +26,27 @@
 #include "client.h"
 
 namespace log2 {
+    // 16 byte hash size
+#define MD5_HASH_SIZE 16
+
     namespace tcp {
+
+             
+        enum class auth : uint8_t {
+            OFF, MD5
+        };
+
+        enum class auth_status : uint8_t {
+            AUTH_OK, AUTH_FAILED
+        };
+        
+        // full duplex r/w streams
+
+        struct full_duplex {
+            FILE *tx;
+            FILE *rx;
+        };
+
         typedef std::vector<std::shared_ptr<std::thread>> connection_threads;
 
         /* function pointer to call to handle the
@@ -42,7 +62,7 @@ namespace log2 {
 
         class server : public client {
         public:
-            
+
             server();
             server(const server& orig);
             virtual ~server() = 0;
@@ -63,6 +83,10 @@ namespace log2 {
                 server::my_reader = reader;
             }
 
+            unsigned char *md5_auth_hash(void) {
+                return md5_auth_hash_;
+            }
+
             // container of connection threads
             static connection_threads connections;
 
@@ -71,19 +95,23 @@ namespace log2 {
             void set_max_conn_buffer(const int conns) {
                 server::max_conn_buffered = conns;
             }
-            
-            void kill(void){
+
+            void kill(void) {
                 server::kill_ = true;
             }
 
         private:
 
+            friend class socket;
             std::unique_ptr<std::thread> server_;
             static bool kill_;
             connection my_connection;
 
             static read_handler my_reader;
             static int max_conn_buffered;
+
+            static unsigned char md5_auth_hash_[MD5_HASH_SIZE];
+            static auth srv_auth_type_;
 
             void bind(void);
 
@@ -93,6 +121,8 @@ namespace log2 {
 
             // default connection handler
             static void connection_loop(std::thread *, const int);
+
+            static bool authorized(full_duplex *);
         };
     }
 }
