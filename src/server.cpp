@@ -183,6 +183,11 @@ namespace tcp {
         }
 
         if (server::authorized(&ipend)) {
+            // notify client AUTH_OK
+            uint8_t authd = (uint8_t) auth_status::AUTH_OK;
+            fwrite(&authd, sizeof (uint8_t), 1, ipend.tx);
+            // send
+            fflush(ipend.tx);
 
             std::string _cmd_return;
             std::string stream;
@@ -225,6 +230,10 @@ namespace tcp {
                     }
                 }
             }
+        } else {
+            // notify client AUTH_FAILED
+            uint8_t authd = (uint8_t) auth_status::AUTH_FAILED;
+            fwrite(&authd, 1, 1, ipend.tx);
         }
 
         fclose(ipend.tx);

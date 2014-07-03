@@ -47,6 +47,9 @@ void test2() {
     if (c.connected()) {
 
         c.write("my md5 hash key is \"this is my md5 key\"\n");
+        c.write("my md5 hash key is \"this is my md5 key\"\n");
+        c.write("my md5 hash key is \"this is my md5 key\"\n");
+        c.write("my md5 hash key is \"this is my md5 key\"\n");
         c.send();
         std::cout << c.readline() << std::endl;
 
