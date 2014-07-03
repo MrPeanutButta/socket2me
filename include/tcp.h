@@ -16,116 +16,161 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
+
 #ifndef TCP_SOCKETS_H
 #define	TCP_SOCKETS_H
 
+#include <map>
+#include <mutex>
+#include <thread>
+#include <string>
+#include <netdb.h>
 #include <functional>
 #include <memory>
 #include <vector>
 #include <cstddef>
 #include <cassert>
 #include <cstring>
+#include <syslog.h>
 #include "md5.h"
-#include "server.h"
 
-namespace log2 {
+namespace tcp {
+    
+    extern char EOL;
+    
+    enum class auth : uint8_t {
+        OFF, MD5
+    };
 
-    /** md5 - returns message-digest
-     * 
-     * @param key : string to digest
-     * @return string md5 of key param
-     */
-    unsigned char *md5(std::string key) {
-        assert(!key.empty());
+    enum class auth_status : uint8_t {
+        AUTH_OK, AUTH_FAILED
+    };
+    // 128 bit type
+    typedef uint64_t* uint128_t;
 
-        MD5_CTX md5_ctx;
-        MD5_Init(&md5_ctx);
-        MD5_Update(&md5_ctx, (void *) key.c_str(), key.size());
+    class ip_endpoint {
+    public:
 
-        unsigned char *res = new unsigned char[MD5_HASH_SIZE];
+        ip_endpoint() : socket_(0),
+        rx_buffer_size(4096),
+        tx_buffer_size(4096) {
+            rp = nullptr;
+            results = nullptr;
+            tx = nullptr;
+            rx = nullptr;
+        }
 
-        MD5_Final(res, &md5_ctx);
+        addrinfo hints;
+        addrinfo *results, *rp;
 
-        assert(res != nullptr);
+        int socket_;
+        int rx_buffer_size;
+        int tx_buffer_size;
 
-        return res;
-    }
+        FILE *tx;
+        FILE *rx;
 
-    /** hash<T> - quick template hash
-     * 
-     * @param key : object to hash
-     * @return string for of hash
-     */
-    template <class T>
-    std::string hash(T key) {
-        std::hash<T> h_;
-        return std::string(h_(key));
-    }
+        bool connected(void) {
 
-    namespace tcp {
+            if (this->rx == nullptr) return false;
+            if (this->tx == nullptr) return false;
+            if (this->socket_ <= 0) return false;
 
-        extern char EOL;
+            if (feof_unlocked(this->rx)) return false;
+            if (feof_unlocked(this->tx)) return false;
 
-        class socket : public server {
-        private:
-            // key and digested key
-            std::string md5_key;
-            std::unique_ptr<unsigned char> md5_hash;
+            return true;
+        }
+    };
 
-            bool is_authed;
-            auth auth_type;
+    // hash indexed redundant connection map
+    typedef std::map<std::size_t, std::shared_ptr<ip_endpoint>> connections;
+    typedef std::vector<std::size_t> connection_hashkey;
 
-            void init_md5(const std::string &key) {
-                md5_key = key;
-                md5_hash.reset(log2::md5(key));
+    class socket {
+    private:
+        friend class server;
+        friend class client;
 
-                memcpy(&server::md5_auth_hash_, md5_hash.get(), MD5_HASH_SIZE);
+        // key and digested key
+        std::string md5_key;
+        std::unique_ptr<unsigned char> md5_hash;
+
+        // hash of active connection
+        std::size_t active_connection;
+        connections redundent_conns;
+        connection_hashkey hashkey_conns;
+
+        bool is_authed;
+        auth auth_type;
+
+        int lock_interval;
+        std::mutex write_mutex;
+
+        void init_md5(const std::string &key);
+        void add_connection(std::size_t index);
+
+    public:
+
+        virtual ~socket() = 0;
+
+        socket();
+        socket(const socket& orig);
+        socket(std::string key, auth auth_);
+
+        bool authenticate(std::string host, std::string port);
+        bool connect(const std::string host, const std::string port);
+        bool connected(void);
+        bool failover(void);
+        bool tx_buff_size(const size_t &);
+        bool rx_buff_size(const size_t &);
+
+        size_t read(void *data, const size_t size, const size_t count);
+        std::string readline(void);
+        uint128_t read128(void);
+        uint64_t read64(void);
+        uint32_t read32(void);
+        uint16_t read16(void);
+        uint8_t read8(void);
+
+        size_t write32(uint8_t byte1, uint8_t byte2, uint8_t byte3, uint8_t byte4);
+        size_t write24(uint8_t byte1, uint8_t byte2, uint8_t byte3);
+        size_t write16(uint8_t byte1, uint8_t byte2);
+        size_t write8(uint8_t byte);
+        size_t write128(uint128_t bytes16);
+        size_t write64(uint64_t bytes8);
+        size_t write32(uint32_t bytes4);
+        size_t write16(uint16_t bytes2);
+        size_t write(const uint8_t *bytes, size_t length);
+        size_t write(const void *data, size_t size, size_t count);
+        size_t write(std::string str);
+
+        int tx_flush(void);
+        int rx_flush(void);
+
+        void disconnect(void);
+        void reset(void);
+
+        void lock(void) {
+            while (!this->write_mutex.try_lock()) {
+                std::this_thread::sleep_for(
+                        std::chrono::nanoseconds(lock_interval)
+                        );
             }
+        }
 
-        public:
+        void unlock(void) {
+            this->write_mutex.unlock();
+        }
 
-            socket(std::string key = "", auth auth_ = auth::OFF) :
-            server() {
+        void send(void) {
+            this->tx_flush();
+        }
 
-                server::srv_auth_type_ = auth_;
-                auth_type = auth_;
-
-                switch (auth_) {
-                    case auth::MD5:
-                        init_md5(key);
-                        break;
-                    default: break;
-                }
-            }
-
-            bool authenticate(std::string host, std::string port) {
-                if (auth_type == auth::OFF) return false;
-                if (md5_key.empty()) return false;
-                if (md5_hash.get() == nullptr) return false;
-
-                this->connect(host, port);
-                if (this->connected()) {
-                    this->write128((uint128_t) md5_hash.get());
-                    this->send();
-                } else {
-                    return false;
-                }
-
-                switch (this->read8()) {
-                    case (int) auth_status::AUTH_OK:
-                        return true;
-                        break;
-                    case (int) auth_status::AUTH_FAILED:
-                        this->disconnect();
-                        return false;
-                        break;
-                    default: break;
-                }
-
-                return false;
-            }
-        };
-    }
+    private:
+        bool get_addr_info(const std::string host, const std::string port);
+    };
 }
 #endif	/* TCP_SOCKETS_H */
 

@@ -23,6 +23,8 @@
  * See md5.c for more information.
  */
 
+#include <string>
+
 #ifdef HAVE_OPENSSL
 #include <openssl/md5.h>
 #elif !defined(_MD5_H)
@@ -41,5 +43,11 @@ typedef struct {
 extern void MD5_Init(MD5_CTX *ctx);
 extern void MD5_Update(MD5_CTX *ctx, const void *data, unsigned long size);
 extern void MD5_Final(unsigned char *result, MD5_CTX *ctx);
+
+// ================================================= custom edits follow
+
+extern unsigned char *md5(std::string key);
+
+#define MD5_HASH_SIZE 16
 
 #endif

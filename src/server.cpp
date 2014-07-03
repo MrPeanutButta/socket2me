@@ -24,220 +24,225 @@
 #include <netinet/tcp.h>
 #include <system_error>
 #include "server.h"
-#include "tcp.h"
 
-namespace log2 {
-    namespace tcp {
-        extern char EOL;
-        connection_threads server::connections;
-        bool server::kill_ = false;
-        read_handler server::my_reader = nullptr;
-        int server::max_conn_buffered = 5;
-        unsigned char server::md5_auth_hash_[MD5_HASH_SIZE];
-        auth server::srv_auth_type_;
+namespace tcp {
+    bool server::kill_ = false;
+    read_handler server::my_reader = nullptr;
+    int server::max_conn_buffered = 5;
+    connection_threads server::connections;
+    unsigned char server::md5_auth_hash_[MD5_HASH_SIZE];
+    auth server::srv_auth_type_ = auth::OFF;
 
-        server::server() : client() {
-            my_connection = &server::connection_loop;
-            server_ = nullptr;
+    server::server(std::string key = "", auth auth_ = tcp::auth::OFF) :
+    socket(key, auth_) {
+        server::my_connection = &server::connection_loop;
+        server_ = nullptr;
+    }
+
+    server::~server() {
+        server::kill_ = true;
+        server::connections.clear();
+    }
+
+    /** Create TCP socket listener.
+     *
+     * creates socket and binds.
+     */
+    bool server::listen(const std::string host,
+            const std::string port) {
+
+        get_addr_info(host, port);
+        this->bind();
+
+        if (redundent_conns[active_connection]->rp == nullptr) return false;
+
+        this->server_.reset(new std::thread(
+                &server::listen_loop,
+                redundent_conns[active_connection]->socket_,
+                *redundent_conns[active_connection]->rp,
+                this->my_connection));
+
+        this->server_->detach();
+
+        freeaddrinfo(redundent_conns[active_connection]->results);
+
+        return true;
+    }
+
+    /** Binds listener to interface.
+     */
+    void server::bind(void) {
+
+        for (redundent_conns[active_connection]->rp = \
+                    redundent_conns[active_connection]->results;
+                redundent_conns[active_connection]->rp != nullptr;
+                redundent_conns[active_connection]->rp =
+                redundent_conns[active_connection]->rp->ai_next) {
+            redundent_conns[active_connection]->socket_ = \
+                        ::socket(redundent_conns[active_connection]->rp->ai_family,
+                    redundent_conns[active_connection]->rp->ai_socktype,
+                    redundent_conns[active_connection]->rp->ai_protocol);
+            if (redundent_conns[active_connection]->socket_ == -1)
+                continue;
+
+            int option = 1;
+            setsockopt(redundent_conns[active_connection]->socket_,
+                    SOL_SOCKET, SO_REUSEADDR,
+                    (char *) &option, sizeof (option));
+
+            if (::bind(redundent_conns[active_connection]->socket_,
+                    redundent_conns[active_connection]->rp->ai_addr,
+                    redundent_conns[active_connection]->rp->ai_addrlen) == 0)
+                break; // success
+
+            close(redundent_conns[active_connection]->socket_);
         }
 
-        server::server(const server& orig) {
+        if (redundent_conns[active_connection]->rp == nullptr) {
+            syslog(LOG_DEBUG, "unable to allocate interface to destination host");
+            return;
         }
+    }
 
-        server::~server() {
-            server::kill_ = true;
-            server::connections.clear();
-        }
+    /** Listen for TCP connections.
+     *
+     * if successful bind, listen for new connections.
+     * each new connection is a new thread.
+     */
+    void server::listen_loop(const int &socket,
+            addrinfo client_addrinfo, connection conn) {
 
-        /** Create TCP socket listener.
-         *
-         * creates socket and binds.
-         */
-        bool server::listen(const std::string host,
-                const std::string port) {
+        // client socket
+        int client_socket = 0;
 
-            get_addr_info(host, port);
-            this->bind();
-
-            if (rp == nullptr) return false;
-
-            this->server_.reset(new std::thread(
-                    &server::listen_loop,
-                    socket_,
-                    *rp,
-                    this->my_connection));
-
-            this->server_->detach();
-
-            freeaddrinfo(results);
-
-            return true;
-        }
-
-        /** Binds listener to interface.
-         */
-        void server::bind(void) {
-
-            for (rp = results; rp != nullptr; rp = rp->ai_next) {
-                socket_ = ::socket(rp->ai_family, rp->ai_socktype,
-                        rp->ai_protocol);
-                if (socket_ == -1)
-                    continue;
-
-                int option = 1;
-                setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR,
-                        (char *) &option, sizeof (option));
-
-                if (::bind(socket_, rp->ai_addr, rp->ai_addrlen) == 0)
-                    break; // success
-
-                close(socket_);
-            }
-
-            if (rp == nullptr) {
-                syslog(LOG_DEBUG, "unable to allocate interface to destination host");
-                return;
-            }
-        }
-
-        /** Listen for TCP connections.
-         *
-         * if successful bind, listen for new connections.
-         * each new connection is a new thread.
-         */
-        void server::listen_loop(const int &socket,
-                addrinfo client_addrinfo, connection conn) {
-
-            // client socket
-            int client_socket = 0;
-
-            // listen until parent BGP thread exits
-            while (!server::kill_) {
-                // listen for connection
-                if (::listen(socket, server::max_conn_buffered) == -1) {
-                    syslog(LOG_DEBUG, "unable to listen for connections");
-                    // failed, throw errno
-                    throw std::system_error(errno, std::system_category());
-                }
-
-                // accept the new connection
-                client_socket = accept(socket, client_addrinfo.ai_addr,
-                        &client_addrinfo.ai_addrlen);
-
-                // set options, no_delay, reuseaddr
-                int option = 1;
-                setsockopt(client_socket, SOL_SOCKET, TCP_NODELAY,
-                        (char *) &option, sizeof (option));
-                setsockopt(client_socket, SOL_SOCKET, SO_REUSEADDR,
-                        (char *) &option, sizeof (option));
-
-                if (client_socket == -1) {
-                    syslog(LOG_DEBUG, "unable to accept connection %d", errno);
-                    close(socket);
-                    close(client_socket);
-                    // failed, throw errno
-                    throw std::system_error(errno, std::system_category());
-                } else {
-
-                    // success, create new thread to manage connection
-                    server::connections.push_back(
-                            std::shared_ptr<std::thread>(new std::thread(
-                            conn,
-                            nullptr, client_socket)));
-
-                    server::connections.back()->detach();
-
-                }
-            }
-
-            close(socket);
-            memset(&client_addrinfo, 0, sizeof (addrinfo));
-        }
-
-        /** Handle client connection.
-         *
-         * reads 'len' and 'command' string.
-         * sends 'command' to parser.
-         */
-        void server::connection_loop(std::thread *connection_thread, int client_socket) {
-
-            // socket file streams
-            full_duplex duplex;
-
-            // open stream for write
-            if (nullptr == (duplex.tx = fdopen(client_socket, "w"))) {
-                close(client_socket);
-                syslog(LOG_DEBUG, "unable to open TX stream");
+        // listen until parent BGP thread exits
+        while (!server::kill_) {
+            // listen for connection
+            if (::listen(socket, server::max_conn_buffered) == -1) {
+                syslog(LOG_DEBUG, "unable to listen for connections");
+                // failed, throw errno
                 throw std::system_error(errno, std::system_category());
             }
 
-            // open stream for read
-            if (nullptr == (duplex.rx = fdopen(client_socket, "r"))) {
+            // accept the new connection
+            client_socket = accept(socket, client_addrinfo.ai_addr,
+                    &client_addrinfo.ai_addrlen);
+
+            // set options, no_delay, reuseaddr
+            int option = 1;
+            setsockopt(client_socket, SOL_SOCKET, TCP_NODELAY,
+                    (char *) &option, sizeof (option));
+            setsockopt(client_socket, SOL_SOCKET, SO_REUSEADDR,
+                    (char *) &option, sizeof (option));
+
+            if (client_socket == -1) {
+                syslog(LOG_DEBUG, "unable to accept connection %d", errno);
+                close(socket);
                 close(client_socket);
-                syslog(LOG_DEBUG, "unable to open RX stream");
+                // failed, throw errno
                 throw std::system_error(errno, std::system_category());
+            } else {
+
+                // success, create new thread to manage connection
+                server::connections.push_back(
+                        std::shared_ptr<std::thread>(new std::thread(
+                        conn,
+                        nullptr, client_socket)));
+
+                server::connections.back()->detach();
+
             }
+        }
 
-            if (server::authorized(&duplex)) {
+        close(socket);
+        memset(&client_addrinfo, 0, sizeof (addrinfo));
+    }
 
-                std::string _cmd_return;
-                std::string stream;
+    /** Handle client connection.
+     *
+     * reads 'len' and 'command' string.
+     * sends 'command' to parser.
+     */
+    void server::connection_loop(std::thread *connection_thread, int client_socket) {
 
-                // while connected and BGP still running.
-                // feof() should be safe for local socket.
-                while (!feof(duplex.rx) && !server::kill_) {
+        // socket file streams
+        ip_endpoint ipend;
 
-                    // get chars from stream
-                    do {
-                        stream += fgetc(duplex.rx);
-                    } while (stream.back() != tcp::EOL);
+        // open stream for write
+        if (nullptr == (ipend.tx = fdopen(client_socket, "w"))) {
+            close(client_socket);
+            syslog(LOG_DEBUG, "unable to open TX stream");
+            throw std::system_error(errno, std::system_category());
+        }
 
-                    // EOF == disconnect
-                    if (stream.back() == EOF) break;
+        // open stream for read
+        if (nullptr == (ipend.rx = fdopen(client_socket, "r"))) {
+            close(client_socket);
+            syslog(LOG_DEBUG, "unable to open RX stream");
+            throw std::system_error(errno, std::system_category());
+        }
 
-                    if (stream.size() > 0) {
+        if (server::authorized(&ipend)) {
 
-                        // call read handler.
-                        if (my_reader != nullptr) {
-                            _cmd_return = server::my_reader(stream);
-                        } else {
-                            syslog(LOG_DEBUG,
-                                    "my_reader == nullptr, set_read_handler first");
-                        }
+            std::string _cmd_return;
+            std::string stream;
 
-                        stream.clear();
+            // while connected and BGP still running.
+            // feof() should be safe for local socket.
+            while (!feof(ipend.rx) && !server::kill_) {
 
-                        /* write the length of ret_val first.
-                         * CLI is expected [len,data].
-                         * increased to 32bit value for larger outputs */
-                        if (_cmd_return.length() > 0) {
-                            // write data
-                            fwrite(_cmd_return.c_str(), 1, _cmd_return.length(), duplex.tx);
-                            // send
-                            fflush(duplex.tx);
-                            _cmd_return.clear();
-                        }
+                // get chars from stream
+                do {
+                    stream += fgetc(ipend.rx);
+                } while (stream.back() != tcp::EOL);
+
+                // EOF == disconnect
+                if (stream.back() == EOF) break;
+
+                if (stream.size() > 0) {
+
+                    // call read handler.
+                    if (server::my_reader != nullptr) {
+                        _cmd_return = server::my_reader(stream);
+                    } else {
+                        syslog(LOG_DEBUG,
+                                "my_reader == nullptr, set_read_handler first");
+                    }
+
+                    stream.clear();
+
+                    /* write the length of ret_val first.
+                     * CLI is expected [len,data].
+                     * increased to 32bit value for larger outputs */
+                    if (_cmd_return.length() > 0) {
+                        // write data
+                        fwrite(_cmd_return.c_str(), 1,
+                                _cmd_return.length(),
+                                ipend.tx);
+                        // send
+                        fflush(ipend.tx);
+                        _cmd_return.clear();
                     }
                 }
             }
-
-            fclose(duplex.tx);
-            fclose(duplex.rx);
-            close(client_socket);
-
-            if (connection_thread != nullptr) {
-                delete connection_thread;
-                connection_thread = nullptr;
-            }
         }
 
-        bool server::authorized(full_duplex *f_dup) {
-            if (server::srv_auth_type_ == auth::OFF) return true;
+        fclose(ipend.tx);
+        fclose(ipend.rx);
+        close(client_socket);
 
-            unsigned char token[MD5_HASH_SIZE];
-            fread(&token, sizeof (token), 1, f_dup->rx);
-            return (!memcmp(&server::md5_auth_hash_, &token, MD5_HASH_SIZE));
+        if (connection_thread != nullptr) {
+            delete connection_thread;
+            connection_thread = nullptr;
         }
+    }
+
+    bool server::authorized(ip_endpoint *f_dup) {
+        if (server::srv_auth_type_ == auth::OFF) return true;
+
+        unsigned char token[MD5_HASH_SIZE];
+        fread(&token, sizeof (token), 1, f_dup->rx);
+        return (!memcmp(&server::md5_auth_hash_, &token, MD5_HASH_SIZE));
     }
 }
 

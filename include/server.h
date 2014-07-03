@@ -23,108 +23,83 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include "client.h"
+#include "tcp.h"
 
-namespace log2 {
-    // 16 byte hash size
-#define MD5_HASH_SIZE 16
+namespace tcp {
 
-    namespace tcp {
+    typedef std::vector<std::shared_ptr<std::thread>> connection_threads;
 
-             
-        enum class auth : uint8_t {
-            OFF, MD5
-        };
+    /* function pointer to call to handle the
+     * actual connection. either is API or CLI */
+    typedef void (*connection)(std::thread *, const int);
 
-        enum class auth_status : uint8_t {
-            AUTH_OK, AUTH_FAILED
-        };
-        
-        // full duplex r/w streams
+    /* function pointer to stream reader.
+     * the string that is returned from the reader
+     * is written back to the stream. if empty string
+     * nothing is sent.
+     */
+    typedef std::string(*read_handler)(std::string);
 
-        struct full_duplex {
-            FILE *tx;
-            FILE *rx;
-        };
+    class server : public socket {
+    public:
 
-        typedef std::vector<std::shared_ptr<std::thread>> connection_threads;
+        server(std::string key, auth auth_);
+        virtual ~server();
 
-        /* function pointer to call to handle the
-         * actual connection. either is API or CLI */
-        typedef void (*connection)(std::thread *, const int);
+        // listens for incomming connections
+        bool listen(const std::string host,
+                const std::string port);
 
-        /* function pointer to stream reader.
-         * the string that is returned from the reader
-         * is written back to the stream. if empty string
-         * nothing is sent.
-         */
-        typedef std::string(*read_handler)(std::string);
+        /* sets function to call when a new
+         * connection is established */
+        void set_conn_handler(connection conn) {
+            this->my_connection = conn;
+        }
 
-        class server : public client {
-        public:
+        /* sets function to call when data is
+         * read form the stream */
+        void set_read_callback(read_handler reader) {
+            server::my_reader = reader;
+        }
 
-            server();
-            server(const server& orig);
-            virtual ~server() = 0;
+        unsigned char *md5_auth_hash(void) {
+            return md5_auth_hash_;
+        }
 
-            // listens for incomming connections
-            bool listen(const std::string host,
-                    const std::string port);
+        // sets max number of connections we intend to buffer
 
-            /* sets function to call when a new
-             * connection is established */
-            void set_conn_handler(connection conn) {
-                this->my_connection = conn;
-            }
+        void set_max_conn_buffer(const int conns) {
+            server::max_conn_buffered = conns;
+        }
 
-            /* sets function to call when data is
-             * read form the stream */
-            void set_read_callback(read_handler reader) {
-                server::my_reader = reader;
-            }
+        void kill(void) {
+            server::kill_ = true;
+        }
 
-            unsigned char *md5_auth_hash(void) {
-                return md5_auth_hash_;
-            }
+    private:
 
-            // container of connection threads
-            static connection_threads connections;
+        std::unique_ptr<std::thread> server_;
+        static bool kill_;
+        connection my_connection;
 
-            // sets max number of connections we intend to buffer
+        static read_handler my_reader;
+        static int max_conn_buffered;
+        static connection_threads connections;
 
-            void set_max_conn_buffer(const int conns) {
-                server::max_conn_buffered = conns;
-            }
+        static unsigned char md5_auth_hash_[MD5_HASH_SIZE];
+        static auth srv_auth_type_;
 
-            void kill(void) {
-                server::kill_ = true;
-            }
+        void bind(void);
 
-        private:
+        /* listens for incomming connections and
+         * calls the connections handler */
+        static void listen_loop(const int &, addrinfo, connection con);
 
-            friend class socket;
-            std::unique_ptr<std::thread> server_;
-            static bool kill_;
-            connection my_connection;
+        // default connection handler
+        static void connection_loop(std::thread *, const int);
 
-            static read_handler my_reader;
-            static int max_conn_buffered;
-
-            static unsigned char md5_auth_hash_[MD5_HASH_SIZE];
-            static auth srv_auth_type_;
-
-            void bind(void);
-
-            /* listens for incomming connections and
-             * calls the connections handler */
-            static void listen_loop(const int &, addrinfo, connection con);
-
-            // default connection handler
-            static void connection_loop(std::thread *, const int);
-
-            static bool authorized(full_duplex *);
-        };
-    }
+        static bool authorized(ip_endpoint *);
+    };
 }
 
 #endif	/* TCP_SERVER_H */

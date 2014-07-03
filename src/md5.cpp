@@ -38,7 +38,7 @@
 #ifndef HAVE_OPENSSL
 
 #include <string.h>
-
+#include <string>
 #include "md5.h"
 
 /*
@@ -292,5 +292,25 @@ void MD5_Final(unsigned char *result, MD5_CTX *ctx)
 
 	memset(ctx, 0, sizeof(*ctx));
 }
+
+// ================================================= custom edits follow
+
+    /** md5 - returns message-digest
+     * 
+     * @param key : string to digest
+     * @return string md5 of key param
+     */
+    unsigned char *md5(std::string key) {
+
+        MD5_CTX md5_ctx;
+        MD5_Init(&md5_ctx);
+        MD5_Update(&md5_ctx, (void *) key.c_str(), key.size());
+
+        unsigned char *res = new unsigned char[MD5_HASH_SIZE];
+
+        MD5_Final(res, &md5_ctx);
+
+        return res;
+    }
 
 #endif
