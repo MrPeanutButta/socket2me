@@ -1,5 +1,5 @@
 /*
- * log2sockets
+ * socket
  * Copyright (C) log2 2013 - Present <aaron.hebert@log2.co>
  *
  * log2sockets is free software: you can redistribute it and/or modify it
@@ -71,6 +71,7 @@ namespace tcp {
         FILE *tx;
         FILE *rx;
 
+        
         bool connected(void) {
 
             if (this->rx == nullptr) return false;
@@ -84,10 +85,6 @@ namespace tcp {
         }
     };
 
-    // hash indexed redundant connection map
-    typedef std::map<std::size_t, std::shared_ptr<ip_endpoint>> connections;
-    typedef std::vector<std::size_t> connection_hashkey;
-
     class socket {
     private:
         friend class server;
@@ -97,16 +94,13 @@ namespace tcp {
         std::string md5_key;
         std::unique_ptr<unsigned char> md5_hash;
 
-        // hash of active connection
-        std::size_t active_connection;
-        connections redundent_conns;
-        connection_hashkey hashkey_conns;
-
         bool is_authed;
         auth auth_type;
 
         int lock_interval;
         std::mutex write_mutex;
+        
+        std::shared_ptr<ip_endpoint> shrd_IPendpoint;
 
         void init_md5(const std::string &key);
         void add_connection(std::size_t index);
@@ -117,8 +111,9 @@ namespace tcp {
 
         socket();
         socket(const socket& orig);
-        socket(std::string key, auth auth_);
+        socket(std::string key = "", auth auth_ = tcp::auth::OFF);
 
+        void set_IPendpoint(std::shared_ptr<ip_endpoint> &ep);
         bool authenticate(std::string host, std::string port);
         bool connect(const std::string host, const std::string port);
         bool connected(void);

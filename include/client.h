@@ -1,5 +1,5 @@
 /*
- * log2sockets
+ * socket
  * Copyright (C) log2 2013 - Present <aaron.hebert@log2.co>
  *
  * log2sockets is free software: you can redistribute it and/or modify it
@@ -24,18 +24,24 @@
 
 namespace tcp {
 
+    // hash indexed redundant connection map
+    typedef std::map<std::size_t, std::shared_ptr<ip_endpoint>> connections;
+    typedef std::vector<std::size_t> connection_hashkey;
+
     class client : public socket {
+    private:
+        // hash of active connection
+        std::size_t active_connection;
+        connections redundent_conns;
+        connection_hashkey hashkey_conns;
+
     public:
 
-        //client();
-        //client(const client& orig);
+        client(std::string key = "", auth auth_ = tcp::auth::OFF);
 
-        client(std::string key = "", auth auth_ = tcp::auth::OFF) :
-        socket(key, auth_) {
-        }
-        // virtual ~client() = 0;
-
-
+        bool authenticate(std::string host, std::string port);
+        void add_connection(std::size_t index);
+        bool failover(void);
     };
 }
 

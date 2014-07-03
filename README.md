@@ -8,7 +8,7 @@ This project has been split from a larger project. I thought this was a bit usef
 #include "tcp.h"
 
 int main(){
-    log2::tcp::socket tcpClient;
+    tcp::client tcpClient;
 
     // connect to loopback port 666
     tcpClient.connect("127.0.0.1", "666");
@@ -46,7 +46,7 @@ std::string test2(std::string text) {
 
 int main(){
 
-    log2::tcp::socket tcpServer;
+    tcp::server tcpServer;
 	// default EOL char is '\n' but can be set
     log2::tcp::EOL = '\n';
     // set callback for when data is read from the stream

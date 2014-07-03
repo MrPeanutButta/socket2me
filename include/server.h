@@ -1,5 +1,5 @@
 /*
- * log2sockets
+ * socket
  * Copyright (C) log2 2013 - Present <aaron.hebert@log2.co>
  *
  * log2sockets is free software: you can redistribute it and/or modify it
@@ -43,7 +43,7 @@ namespace tcp {
     class server : public socket {
     public:
 
-        server(std::string key, auth auth_);
+        server(std::string key = "", auth auth_ = tcp::auth::OFF);
         virtual ~server();
 
         // listens for incomming connections
@@ -98,7 +98,7 @@ namespace tcp {
         // default connection handler
         static void connection_loop(std::thread *, const int);
 
-        static bool authorized(ip_endpoint *);
+        static bool authorized(ip_endpoint &);
     };
 }
 
