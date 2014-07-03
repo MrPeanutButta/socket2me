@@ -1,5 +1,5 @@
 /*
- * log2sockets
+ * socket
  * Copyright (C) log2 2013 - Present <aaron.hebert@log2.co>
  *
  * log2sockets is free software: you can redistribute it and/or modify it
@@ -21,8 +21,11 @@
 #include <cstdio>
 #include <cstring>
 #include <unistd.h>
+#include <memory>
 #include <netinet/tcp.h>
 #include <sys/ioctl.h>
+#include "tcp.h"
+#include "server.h"
 
 namespace tcp {
 
@@ -35,7 +38,7 @@ namespace tcp {
         reset();
     }
 
-    socket::socket(std::string key = "", auth auth_ = auth::OFF) :
+    socket::socket(std::string key, auth auth_) :
     lock_interval(10) {
         reset();
         auth_type = auth_;
@@ -53,61 +56,16 @@ namespace tcp {
         md5_hash.reset(md5(key));
     }
 
-    void socket::add_connection(std::size_t index) {
-        if (redundent_conns.empty()) {
-            active_connection = index;
-        }
-
-        ip_endpoint *p_ipend = new ip_endpoint();
-        hashkey_conns.push_back(index);
-        redundent_conns[index].reset(p_ipend);
+    void socket::set_IPendpoint(std::shared_ptr<ip_endpoint> &ep){
+        shrd_IPendpoint = ep;//std::make_shared<ip_endpoint>(*ep);
     }
 
     void socket::reset(void) {
-        if (redundent_conns.empty()) return;
+        if (shrd_IPendpoint.get() == nullptr) return;
 
-        if (redundent_conns[active_connection]->socket_ > 0)
-            close(redundent_conns[active_connection]->socket_);
-        memset(&redundent_conns[active_connection]->hints, 0, sizeof (addrinfo));
-    }
-
-    bool socket::failover(void) {
-        connection_hashkey::iterator it_ = std::find(hashkey_conns.begin(),
-                hashkey_conns.end(), active_connection);
-
-        if (it_ == hashkey_conns.end()) return false;
-
-        // set next hash
-        active_connection = (std::size_t)(*++it_);
-
-        return connected();
-    }
-
-    bool socket::authenticate(std::string host, std::string port) {
-        if (auth_type == auth::OFF) return false;
-        if (md5_key.empty()) return false;
-        if (md5_hash.get() == nullptr) return false;
-
-        this->connect(host, port);
-        if (this->connected()) {
-            this->write128((uint128_t) md5_hash.get());
-            this->send();
-        } else {
-            return false;
-        }
-
-        switch (this->read8()) {
-            case (int) auth_status::AUTH_OK:
-                return true;
-                break;
-            case (int) auth_status::AUTH_FAILED:
-                this->disconnect();
-                return false;
-                break;
-            default: break;
-        }
-
-        return false;
+        if (shrd_IPendpoint->socket_ > 0)
+            close(shrd_IPendpoint->socket_);
+        memset(&shrd_IPendpoint->hints, 0, sizeof (addrinfo));
     }
 
     /** Sets server info.
@@ -116,28 +74,20 @@ namespace tcp {
      * this must be called before anything.
      */
     bool socket::get_addr_info(const std::string host, const std::string port) {
-        std::hash<std::string> h_;
-        std::size_t index = h_(host + port);
 
-       connections::iterator it_ = redundent_conns.find(index);
-       
-        if (it_ == redundent_conns.end()) {
-            add_connection(index);
-        }
-
-        redundent_conns[active_connection]->hints.ai_family = AF_UNSPEC; // ipv4 or ipv6
-        redundent_conns[active_connection]->hints.ai_socktype = SOCK_STREAM; // tcp
-        redundent_conns[active_connection]->hints.ai_flags = AI_PASSIVE;
-        redundent_conns[active_connection]->hints.ai_protocol = 0;
-        redundent_conns[active_connection]->hints.ai_canonname = nullptr;
-        redundent_conns[active_connection]->hints.ai_addr = nullptr;
-        redundent_conns[active_connection]->hints.ai_next = nullptr;
-        redundent_conns[active_connection]->results = 0;
+        shrd_IPendpoint->hints.ai_family = AF_UNSPEC; // ipv4 or ipv6
+        shrd_IPendpoint->hints.ai_socktype = SOCK_STREAM; // tcp
+        shrd_IPendpoint->hints.ai_flags = AI_PASSIVE;
+        shrd_IPendpoint->hints.ai_protocol = 0;
+        shrd_IPendpoint->hints.ai_canonname = nullptr;
+        shrd_IPendpoint->hints.ai_addr = nullptr;
+        shrd_IPendpoint->hints.ai_next = nullptr;
+        shrd_IPendpoint->results = 0;
 
         // man getaddrinfo(3)
         int s = getaddrinfo(host.c_str(), port.c_str(),
-                &redundent_conns[active_connection]->hints,
-                &redundent_conns[active_connection]->results);
+                &shrd_IPendpoint->hints,
+                &shrd_IPendpoint->results);
 
         if (s != 0) {
             syslog(LOG_DEBUG, "get_addr_info: %s", gai_strerror(s));
@@ -154,32 +104,30 @@ namespace tcp {
     bool socket::connect(const std::string host, const std::string port) {
 
         if (!get_addr_info(host, port)) return false;
-        if (!redundent_conns[active_connection]->results) return false;
+        if (!shrd_IPendpoint->results) return false;
 
         bool rc(false);
 
         // find a suitable interface
-        for (redundent_conns[active_connection]->rp = \
-                    redundent_conns[active_connection]->results;
-                redundent_conns[active_connection]->rp != nullptr;
-                redundent_conns[active_connection]->rp = \
-                    redundent_conns[active_connection]->rp->ai_next) {
+        for (shrd_IPendpoint->rp = shrd_IPendpoint->results;
+                shrd_IPendpoint->rp != nullptr;
+                shrd_IPendpoint->rp = \
+                    shrd_IPendpoint->rp->ai_next) {
 
-            redundent_conns[active_connection]->socket_ = \
-                        ::socket(redundent_conns[active_connection]->rp->ai_family,
-                    redundent_conns[active_connection]->rp->ai_socktype,
-                    redundent_conns[active_connection]->rp->ai_protocol);
-            if (redundent_conns[active_connection]->socket_ == -1)
+            shrd_IPendpoint->socket_ = ::socket(shrd_IPendpoint->rp->ai_family,
+                    shrd_IPendpoint->rp->ai_socktype,
+                    shrd_IPendpoint->rp->ai_protocol);
+            if (shrd_IPendpoint->socket_ == -1)
                 continue;
 
             // attempt to connect
-            if (::connect(redundent_conns[active_connection]->socket_,
-                    redundent_conns[active_connection]->rp->ai_addr,
-                    redundent_conns[active_connection]->rp->ai_addrlen) != -1) {
+            if (::connect(shrd_IPendpoint->socket_,
+                    shrd_IPendpoint->rp->ai_addr,
+                    shrd_IPendpoint->rp->ai_addrlen) != -1) {
 
                 // set options
                 int option = 1;
-                setsockopt(redundent_conns[active_connection]->socket_,
+                setsockopt(shrd_IPendpoint->socket_,
                         SOL_SOCKET, SO_REUSEADDR,
                         (char *) &option, sizeof (option));
 
@@ -191,28 +139,30 @@ namespace tcp {
                 break;
             }
 
-            close(redundent_conns[active_connection]->socket_);
+            close(shrd_IPendpoint->socket_);
         }
 
-        if (redundent_conns[active_connection]->rp == nullptr) {
+        if (shrd_IPendpoint->rp == nullptr) {
             syslog(LOG_DEBUG, "unable to allocate interface to destination host");
             return false;
         }
 
         // free results
-        freeaddrinfo(redundent_conns[active_connection]->results);
+        freeaddrinfo(shrd_IPendpoint->results);
 
         // open stream for write
-        if (nullptr == (redundent_conns[active_connection]->tx = \
-                    fdopen(redundent_conns[active_connection]->socket_, "w"))) {
-            close(redundent_conns[active_connection]->socket_);
+        if (nullptr == (shrd_IPendpoint->tx = \
+                fdopen(shrd_IPendpoint->socket_, "w"))) {
+            
+            close(shrd_IPendpoint->socket_);
             syslog(LOG_DEBUG, "unable to open TX stream");
         } else rc = true;
 
         // open stream for read
-        if (nullptr == (redundent_conns[active_connection]->rx = \
-                    fdopen(redundent_conns[active_connection]->socket_, "r"))) {
-            close(redundent_conns[active_connection]->socket_);
+        if (nullptr == (shrd_IPendpoint->rx = \
+                fdopen(shrd_IPendpoint->socket_, "r"))) {
+            
+            close(shrd_IPendpoint->socket_);
             syslog(LOG_DEBUG, "unable to open RX stream");
         } else rc = true;
 
@@ -220,25 +170,25 @@ namespace tcp {
     }
 
     void socket::disconnect(void) {
-        close(redundent_conns[active_connection]->socket_);
-        if (redundent_conns[active_connection]->tx)
-            fclose(redundent_conns[active_connection]->tx);
-        if (redundent_conns[active_connection]->rx)
-            fclose(redundent_conns[active_connection]->rx);
+        close(shrd_IPendpoint->socket_);
+        if (shrd_IPendpoint->tx)
+            fclose(shrd_IPendpoint->tx);
+        if (shrd_IPendpoint->rx)
+            fclose(shrd_IPendpoint->rx);
 
-        redundent_conns[active_connection]->rx = nullptr;
-        redundent_conns[active_connection]->tx = nullptr;
+        shrd_IPendpoint->rx = nullptr;
+        shrd_IPendpoint->tx = nullptr;
     }
 
     /** Resize tx socket buffer size.
      */
     bool socket::tx_buff_size(const size_t &size) {
 
-        redundent_conns[active_connection]->tx_buffer_size = size;
+        shrd_IPendpoint->tx_buffer_size = size;
         bool ret_val(false);
         int option(size);
 
-        ret_val = !setsockopt(redundent_conns[active_connection]->socket_,
+        ret_val = !setsockopt(shrd_IPendpoint->socket_,
                 SOL_SOCKET, SO_SNDBUF,
                 (char *) &option, sizeof (option));
 
@@ -249,11 +199,11 @@ namespace tcp {
      */
     bool socket::rx_buff_size(const size_t &size) {
 
-        redundent_conns[active_connection]->rx_buffer_size = size;
+        shrd_IPendpoint->rx_buffer_size = size;
         bool ret_val = false;
         int option = size;
 
-        ret_val = !setsockopt(redundent_conns[active_connection]->socket_,
+        ret_val = !setsockopt(shrd_IPendpoint->socket_,
                 SOL_SOCKET, SO_RCVBUF,
                 (char *) &option, sizeof (option));
 
@@ -271,7 +221,7 @@ namespace tcp {
      * mutex but i believe that this is called from a single thread.
      */
     bool socket::connected(void) {
-        if (!redundent_conns[active_connection]->connected()) {
+        if (!shrd_IPendpoint->connected()) {
             syslog(LOG_DEBUG,
                     "can not read/write, no stream available");
             return false;
@@ -290,7 +240,7 @@ namespace tcp {
         if (!connected()) return tcp::EOL;
 
         this->lock();
-        std::size_t size_ = fread(data, size, count, redundent_conns[active_connection]->rx);
+        std::size_t size_ = fread(data, size, count, shrd_IPendpoint->rx);
         this->unlock();
 
         return size_;
@@ -361,7 +311,7 @@ namespace tcp {
         if (!connected()) return tcp::EOL;
         this->lock();
         size_t write_ = fwrite(data, size, count,
-                redundent_conns[active_connection]->tx);
+                shrd_IPendpoint->tx);
         this->unlock();
 
         return write_;
@@ -384,7 +334,7 @@ namespace tcp {
         if (!connected()) return tcp::EOL;
 
         this->lock();
-        size_t write_ = fprintf(redundent_conns[active_connection]->tx,
+        size_t write_ = fprintf(shrd_IPendpoint->tx,
                 "%c%c%c%c", byte1, byte2, byte3, byte4);
         this->unlock();
 
@@ -420,7 +370,7 @@ namespace tcp {
     size_t socket::write24(uint8_t byte1, uint8_t byte2, uint8_t byte3) {
         if (!connected()) return tcp::EOL;
         this->lock();
-        size_t write_ = fprintf(redundent_conns[active_connection]->tx,
+        size_t write_ = fprintf(shrd_IPendpoint->tx,
                 "%c%c%c", byte1, byte2, byte3);
         this->unlock();
         return write_;
@@ -433,7 +383,7 @@ namespace tcp {
     size_t socket::write16(uint8_t byte1, uint8_t byte2) {
         if (!connected()) return tcp::EOL;
         this->lock();
-        size_t write_ = fprintf(redundent_conns[active_connection]->tx,
+        size_t write_ = fprintf(shrd_IPendpoint->tx,
                 "%c%c", byte1, byte2);
         this->unlock();
         return write_;
@@ -454,7 +404,7 @@ namespace tcp {
         if (!connected()) return EOF;
 
         this->lock();
-        int rc = fflush(redundent_conns[active_connection]->tx);
+        int rc = fflush(shrd_IPendpoint->tx);
         this->unlock();
 
         return rc;
@@ -469,7 +419,7 @@ namespace tcp {
         if (!connected()) return EOF;
 
         this->lock();
-        int rc = fflush(redundent_conns[active_connection]->rx);
+        int rc = fflush(shrd_IPendpoint->rx);
         this->unlock();
 
         return rc;

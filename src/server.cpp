@@ -1,5 +1,5 @@
 /*
- * log2sockets
+ * socket
  * Copyright (C) log2 2013 - Present <aaron.hebert@log2.co>
  *
  * log2sockets is free software: you can redistribute it and/or modify it
@@ -33,8 +33,16 @@ namespace tcp {
     unsigned char server::md5_auth_hash_[MD5_HASH_SIZE];
     auth server::srv_auth_type_ = auth::OFF;
 
-    server::server(std::string key = "", auth auth_ = tcp::auth::OFF) :
+    server::server(std::string key, auth auth_) :
     socket(key, auth_) {
+
+        if (auth_ == tcp::auth::MD5) {
+            memcpy(&server::md5_auth_hash_,
+                    this->md5_hash.get(),
+                    MD5_HASH_SIZE);
+        }
+
+        server::srv_auth_type_ = this->auth_type;
         server::my_connection = &server::connection_loop;
         server_ = nullptr;
     }
@@ -51,20 +59,21 @@ namespace tcp {
     bool server::listen(const std::string host,
             const std::string port) {
 
+        shrd_IPendpoint = std::make_shared<ip_endpoint>(*(new ip_endpoint()));
         get_addr_info(host, port);
         this->bind();
 
-        if (redundent_conns[active_connection]->rp == nullptr) return false;
+        if (shrd_IPendpoint->rp == nullptr) return false;
 
         this->server_.reset(new std::thread(
                 &server::listen_loop,
-                redundent_conns[active_connection]->socket_,
-                *redundent_conns[active_connection]->rp,
+                shrd_IPendpoint->socket_,
+                *shrd_IPendpoint->rp,
                 this->my_connection));
 
         this->server_->detach();
 
-        freeaddrinfo(redundent_conns[active_connection]->results);
+        freeaddrinfo(shrd_IPendpoint->results);
 
         return true;
     }
@@ -73,32 +82,32 @@ namespace tcp {
      */
     void server::bind(void) {
 
-        for (redundent_conns[active_connection]->rp = \
-                    redundent_conns[active_connection]->results;
-                redundent_conns[active_connection]->rp != nullptr;
-                redundent_conns[active_connection]->rp =
-                redundent_conns[active_connection]->rp->ai_next) {
-            redundent_conns[active_connection]->socket_ = \
-                        ::socket(redundent_conns[active_connection]->rp->ai_family,
-                    redundent_conns[active_connection]->rp->ai_socktype,
-                    redundent_conns[active_connection]->rp->ai_protocol);
-            if (redundent_conns[active_connection]->socket_ == -1)
+        for (shrd_IPendpoint->rp = \
+                    shrd_IPendpoint->results;
+                shrd_IPendpoint->rp != nullptr;
+                shrd_IPendpoint->rp =
+                shrd_IPendpoint->rp->ai_next) {
+            shrd_IPendpoint->socket_ = \
+                        ::socket(shrd_IPendpoint->rp->ai_family,
+                    shrd_IPendpoint->rp->ai_socktype,
+                    shrd_IPendpoint->rp->ai_protocol);
+            if (shrd_IPendpoint->socket_ == -1)
                 continue;
 
             int option = 1;
-            setsockopt(redundent_conns[active_connection]->socket_,
+            setsockopt(shrd_IPendpoint->socket_,
                     SOL_SOCKET, SO_REUSEADDR,
                     (char *) &option, sizeof (option));
 
-            if (::bind(redundent_conns[active_connection]->socket_,
-                    redundent_conns[active_connection]->rp->ai_addr,
-                    redundent_conns[active_connection]->rp->ai_addrlen) == 0)
+            if (::bind(shrd_IPendpoint->socket_,
+                    shrd_IPendpoint->rp->ai_addr,
+                    shrd_IPendpoint->rp->ai_addrlen) == 0)
                 break; // success
 
-            close(redundent_conns[active_connection]->socket_);
+            close(shrd_IPendpoint->socket_);
         }
 
-        if (redundent_conns[active_connection]->rp == nullptr) {
+        if (shrd_IPendpoint->rp == nullptr) {
             syslog(LOG_DEBUG, "unable to allocate interface to destination host");
             return;
         }
@@ -182,12 +191,7 @@ namespace tcp {
             throw std::system_error(errno, std::system_category());
         }
 
-        if (server::authorized(&ipend)) {
-            // notify client AUTH_OK
-            uint8_t authd = (uint8_t) auth_status::AUTH_OK;
-            fwrite(&authd, sizeof (uint8_t), 1, ipend.tx);
-            // send
-            fflush(ipend.tx);
+        if (server::authorized(ipend)) {
 
             std::string _cmd_return;
             std::string stream;
@@ -230,10 +234,6 @@ namespace tcp {
                     }
                 }
             }
-        } else {
-            // notify client AUTH_FAILED
-            uint8_t authd = (uint8_t) auth_status::AUTH_FAILED;
-            fwrite(&authd, 1, 1, ipend.tx);
         }
 
         fclose(ipend.tx);
@@ -246,12 +246,26 @@ namespace tcp {
         }
     }
 
-    bool server::authorized(ip_endpoint *f_dup) {
+    bool server::authorized(ip_endpoint &f_dup) {
         if (server::srv_auth_type_ == auth::OFF) return true;
 
         unsigned char token[MD5_HASH_SIZE];
-        fread(&token, sizeof (token), 1, f_dup->rx);
-        return (!memcmp(&server::md5_auth_hash_, &token, MD5_HASH_SIZE));
+        fread(&token, sizeof (unsigned char), MD5_HASH_SIZE, f_dup.rx);
+
+        bool is_valid = (!memcmp(&server::md5_auth_hash_, &token, MD5_HASH_SIZE));
+
+        if (is_valid) {
+            // notify client AUTH_OK
+            uint8_t authd = (uint8_t) auth_status::AUTH_OK;
+            fwrite(&authd, sizeof (uint8_t), 1, f_dup.tx);
+        } else {
+            // notify client AUTH_FAILED
+            uint8_t authd = (uint8_t) auth_status::AUTH_FAILED;
+            fwrite(&authd, sizeof (uint8_t), 1, f_dup.tx);
+        }
+
+        fflush(f_dup.tx);
+        return is_valid;
     }
 }
 
