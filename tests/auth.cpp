@@ -145,6 +145,7 @@ tcp::server * init_srv3(void) {
 void init_failover_client(void) {
     std::cout << "init_failover_client" << std::endl;
 
+    // passing MD5 key and auth type
     tcp::client c("test_auth_pass", tcp::auth::MD5);
 
     while(!c.authenticate("127.0.0.1", "666"));
