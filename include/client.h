@@ -25,22 +25,24 @@
 namespace tcp {
 
     // hash indexed redundant connection map
-    typedef std::map<std::size_t, std::shared_ptr<ip_endpoint>> connections;
-    typedef std::vector<std::size_t> connection_hashkey;
+    //typedef std::map<std::size_t, std::shared_ptr<ip_endpoint>> connections;
+    //typedef std::vector<std::size_t> connection_hashkey;
 
+    typedef std::vector<std::shared_ptr<ip_point>> connections;
+    
     class client : public socket {
     private:
         // hash of active connection
-        std::size_t active_connection;
+        //std::size_t active_connection;
         connections redundent_conns;
-        connection_hashkey hashkey_conns;
+        //connection_hashkey hashkey_conns;
 
     public:
 
         client(std::string key = "", auth auth_ = tcp::auth::OFF);
 
         bool authenticate(std::string host, std::string port);
-        void add_connection(std::size_t index);
+        void add_failover(std::string host, std::string port);
         bool failover(void);
     };
 }

@@ -23,29 +23,23 @@ namespace tcp {
     //extern class ip_endpoint;
 
     client::client(std::string key, auth auth_) :
-    socket(key, auth_), active_connection(0) {
+    socket(key, auth_) {
 
     }
 
     bool client::authenticate(std::string host, std::string port) {
-        if (auth_type == auth::OFF) return false;
-        if (md5_key.empty()) return false;
-        if (md5_hash.get() == nullptr) return false;
+        if (auth_type_ == auth::OFF) return false;
+        if (md5_key_.empty()) return false;
+        if (md5_hash_.get() == nullptr) return false;
 
-        std::hash<std::string> h_;
-        std::size_t index = h_(host + port);
-
-        connection_hashkey::iterator it_ = std::find
-                (hashkey_conns.begin(),hashkey_conns.end(), index);
-
-        if (it_ == hashkey_conns.end()) {
-            add_connection(index);
+        if (redundent_conns.empty()) {
+            add_failover(host, port);
+            this->ip_endpoint(redundent_conns.back());
         }
 
-        this->set_IPendpoint(redundent_conns[index]);
         this->connect(host, port);
         if (this->connected()) {
-            this->write(md5_hash.get(), MD5_HASH_SIZE);
+            this->write(md5_hash_.get(), MD5_HASH_SIZE);
             this->send();
         } else {
             return false;
@@ -54,12 +48,10 @@ namespace tcp {
         switch (this->read8()) {
             case (int) auth_status::AUTH_OK:
                 // reset to real active
-                this->set_IPendpoint(redundent_conns[active_connection]);
                 return true;
                 break;
             case (int) auth_status::AUTH_FAILED:
                 // reset to real active
-                this->set_IPendpoint(redundent_conns[active_connection]);
                 this->disconnect();
                 return false;
                 break;
@@ -69,31 +61,41 @@ namespace tcp {
         return false;
     }
 
-    void client::add_connection(std::size_t index) {
-        bool first_conn = redundent_conns.empty();
-        
-        if (first_conn) {
-            active_connection = index;
-        }
+    void client::add_failover(std::string host, std::string port) {
 
-        ip_endpoint *p_ipend = new ip_endpoint();
-        hashkey_conns.push_back(index);
-        redundent_conns[index] = std::make_shared<ip_endpoint>(*p_ipend);
-         
-        if(first_conn){
-            this->set_IPendpoint(redundent_conns[active_connection]);
-        }
+        ip_point *p_ipend = new ip_point();
+        p_ipend->host = host;
+        p_ipend->port = port;
+
+        redundent_conns.push_back(std::make_shared<ip_point>(*p_ipend));
+
     }
 
+    /**
+     * Trigger a failover scenario
+     * @return true if connection recovers flase
+     */
     bool client::failover(void) {
-        for (auto &con : redundent_conns) {
-            if (con.second->connected()) {
-                active_connection = con.first;
-                this->set_IPendpoint(redundent_conns[active_connection]);
-                break;
+        this->disconnect();
+        
+        do {
+            for (auto &con : redundent_conns) {
+                this->ip_endpoint(con);
+                if (authenticate(con->host, con->port)) {
+                    return connected();
+                }
             }
-        }
+            
+            /* This may cause an infinite loop if,
+             * if left disconnected.
+             * The benefits of this would be that 
+             * the daemon will come back up once
+             * a good connection is established.
+             * There needs to be a more controlled 
+             * break here */
+        } while (!connected());
 
+        // not reached
         return connected();
     }
 }

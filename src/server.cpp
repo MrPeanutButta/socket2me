@@ -38,11 +38,11 @@ namespace tcp {
 
         if (auth_ == tcp::auth::MD5) {
             memcpy(&server::md5_auth_hash_,
-                    this->md5_hash.get(),
+                    this->md5_hash_.get(),
                     MD5_HASH_SIZE);
         }
 
-        server::srv_auth_type_ = this->auth_type;
+        server::srv_auth_type_ = this->auth_type_;
         server::my_connection = &server::connection_loop;
         server_ = nullptr;
     }
@@ -59,21 +59,21 @@ namespace tcp {
     bool server::listen(const std::string host,
             const std::string port) {
 
-        shrd_IPendpoint = std::make_shared<ip_endpoint>(*(new ip_endpoint()));
+        ip_endpoint_ = std::make_shared<ip_point>(*(new ip_point()));
         get_addr_info(host, port);
         this->bind();
 
-        if (shrd_IPendpoint->rp == nullptr) return false;
+        if (ip_endpoint_->rp == nullptr) return false;
 
         this->server_.reset(new std::thread(
                 &server::listen_loop,
-                shrd_IPendpoint->socket_,
-                *shrd_IPendpoint->rp,
+                ip_endpoint_->socket_,
+                *ip_endpoint_->rp,
                 this->my_connection));
 
         this->server_->detach();
 
-        freeaddrinfo(shrd_IPendpoint->results);
+        freeaddrinfo(ip_endpoint_->results);
 
         return true;
     }
@@ -82,32 +82,31 @@ namespace tcp {
      */
     void server::bind(void) {
 
-        for (shrd_IPendpoint->rp = \
-                    shrd_IPendpoint->results;
-                shrd_IPendpoint->rp != nullptr;
-                shrd_IPendpoint->rp =
-                shrd_IPendpoint->rp->ai_next) {
-            shrd_IPendpoint->socket_ = \
-                        ::socket(shrd_IPendpoint->rp->ai_family,
-                    shrd_IPendpoint->rp->ai_socktype,
-                    shrd_IPendpoint->rp->ai_protocol);
-            if (shrd_IPendpoint->socket_ == -1)
+        for (ip_endpoint_->rp = ip_endpoint_->results;
+                ip_endpoint_->rp != nullptr;
+                ip_endpoint_->rp = ip_endpoint_->rp->ai_next) {
+
+            ip_endpoint_->socket_ = ::socket(ip_endpoint_->rp->ai_family,
+                                            ip_endpoint_->rp->ai_socktype,
+                                            ip_endpoint_->rp->ai_protocol);
+
+            if (ip_endpoint_->socket_ == -1)
                 continue;
 
             int option = 1;
-            setsockopt(shrd_IPendpoint->socket_,
+            setsockopt(ip_endpoint_->socket_,
                     SOL_SOCKET, SO_REUSEADDR,
                     (char *) &option, sizeof (option));
 
-            if (::bind(shrd_IPendpoint->socket_,
-                    shrd_IPendpoint->rp->ai_addr,
-                    shrd_IPendpoint->rp->ai_addrlen) == 0)
+            if (::bind(ip_endpoint_->socket_,
+                    ip_endpoint_->rp->ai_addr,
+                    ip_endpoint_->rp->ai_addrlen) == 0)
                 break; // success
 
-            close(shrd_IPendpoint->socket_);
+            close(ip_endpoint_->socket_);
         }
 
-        if (shrd_IPendpoint->rp == nullptr) {
+        if (ip_endpoint_->rp == nullptr) {
             syslog(LOG_DEBUG, "unable to allocate interface to destination host");
             return;
         }
@@ -175,7 +174,7 @@ namespace tcp {
     void server::connection_loop(std::thread *connection_thread, int client_socket) {
 
         // socket file streams
-        ip_endpoint ipend;
+        ip_point ipend;
 
         // open stream for write
         if (nullptr == (ipend.tx = fdopen(client_socket, "w"))) {
@@ -246,7 +245,7 @@ namespace tcp {
         }
     }
 
-    bool server::authorized(ip_endpoint &f_dup) {
+    bool server::authorized(ip_point &f_dup) {
         if (server::srv_auth_type_ == auth::OFF) return true;
 
         unsigned char token[MD5_HASH_SIZE];

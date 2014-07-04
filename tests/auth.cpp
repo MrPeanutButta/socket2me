@@ -147,37 +147,27 @@ void init_failover_client(void) {
 
     tcp::client c("test_auth_pass", tcp::auth::MD5);
 
-    c.authenticate("127.0.0.1", "666");
-    c.authenticate("127.0.0.1", "667");
-    c.authenticate("127.0.0.1", "668");
+    while(!c.authenticate("127.0.0.1", "666"));
+    c.add_failover("127.0.0.1", "667");
+    c.add_failover("127.0.0.1", "668");
 
-    while (c.connected()) {
-        c.write("init_failover_client: data_write\n");
-        c.send();
-        std::cout << c.readline() << std::endl;
-        std::this_thread::sleep_for(std::chrono::seconds(3));
-    }
+    do {
+        while (c.connected()) {
+            c.write("init_failover_client: data_write\n");
+            c.send();
+            std::cout << c.readline();
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+
+        std::cout << "attempting failover\n";
+    } while (c.failover());
 
     std::cout << "init_failover_client: no longer connected\n";
 }
 
 void test_failover(void) {
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-
     init_failover_client();
-    //    //std::thread *t = new std::thread(init_failover_client);
-    //    //t->detach();
-    //
-    //    //sleep(60);
-    //    // start failover from s1
-    //    /*std::this_thread::sleep_for(std::chrono::seconds(10));
-    //    s3->kill();
-    //    std::this_thread::sleep_for(std::chrono::seconds(60));
-    //    s2->kill();
-    //    std::this_thread::sleep_for(std::chrono::seconds(20));
-    //    s1->kill();*/
-    //    //*/
 
 }
 
@@ -201,7 +191,9 @@ int main(int argc, char** argv) {
     while (1) {
         tcp::server *s1 = init_srv1();
         std::this_thread::sleep_for(std::chrono::seconds(50));
+        s1->disconnect();
         s1->kill();
+        std::cout << "srv1 killed" << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(5));
         delete s1;
     }
@@ -211,7 +203,9 @@ int main(int argc, char** argv) {
     while (1) {
         tcp::server *s2 = init_srv2();
         std::this_thread::sleep_for(std::chrono::seconds(70));
+        s2->disconnect();
         s2->kill();
+        std::cout << "srv2 killed" << std::endl;
         delete s2;
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }
@@ -221,7 +215,9 @@ int main(int argc, char** argv) {
     while (1) {
         tcp::server *s3 = init_srv3();
         std::this_thread::sleep_for(std::chrono::seconds(90));
+        s3->disconnect();
         s3->kill();
+        std::cout << "srv3 killed" << std::endl;
         delete s3;
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }

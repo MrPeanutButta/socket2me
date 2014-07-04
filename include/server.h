@@ -98,7 +98,7 @@ namespace tcp {
         // default connection handler
         static void connection_loop(std::thread *, const int);
 
-        static bool authorized(ip_endpoint &);
+        static bool authorized(ip_point &);
     };
 }
 

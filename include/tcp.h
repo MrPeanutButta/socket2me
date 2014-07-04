@@ -38,21 +38,25 @@
 namespace tcp {
     
     extern char EOL;
-    
+   
+    // auth ON/OFF
     enum class auth : uint8_t {
         OFF, MD5
     };
 
+    // simple custom ACK tokens
     enum class auth_status : uint8_t {
         AUTH_OK, AUTH_FAILED
     };
-    // 128 bit type
+    
+    
+    // 128 bit type, can read MD5, INET6 for example
     typedef uint64_t* uint128_t;
 
-    class ip_endpoint {
+    class ip_point {
     public:
 
-        ip_endpoint() : socket_(0),
+        ip_point() : socket_(0),
         rx_buffer_size(4096),
         tx_buffer_size(4096) {
             rp = nullptr;
@@ -60,7 +64,10 @@ namespace tcp {
             tx = nullptr;
             rx = nullptr;
         }
-
+        
+        std::string host;
+        std::string port;
+        
         addrinfo hints;
         addrinfo *results, *rp;
 
@@ -71,7 +78,6 @@ namespace tcp {
         FILE *tx;
         FILE *rx;
 
-        
         bool connected(void) {
 
             if (this->rx == nullptr) return false;
@@ -91,16 +97,16 @@ namespace tcp {
         friend class client;
 
         // key and digested key
-        std::string md5_key;
-        std::unique_ptr<unsigned char> md5_hash;
+        std::string md5_key_;
+        std::unique_ptr<unsigned char> md5_hash_;
 
-        bool is_authed;
-        auth auth_type;
+        bool is_authed_;
+        auth auth_type_;
 
-        int lock_interval;
-        std::mutex write_mutex;
+        int lock_interval_;
+        std::mutex write_mutex_;
         
-        std::shared_ptr<ip_endpoint> shrd_IPendpoint;
+        std::shared_ptr<ip_point> ip_endpoint_;
 
         void init_md5(const std::string &key);
         void add_connection(std::size_t index);
@@ -113,7 +119,7 @@ namespace tcp {
         socket(const socket& orig);
         socket(std::string key = "", auth auth_ = tcp::auth::OFF);
 
-        void set_IPendpoint(std::shared_ptr<ip_endpoint> &ep);
+        void ip_endpoint(std::shared_ptr<ip_point> &ep);
         bool authenticate(std::string host, std::string port);
         bool connect(const std::string host, const std::string port);
         bool connected(void);
@@ -148,15 +154,15 @@ namespace tcp {
         void reset(void);
 
         void lock(void) {
-            while (!this->write_mutex.try_lock()) {
+            while (!this->write_mutex_.try_lock()) {
                 std::this_thread::sleep_for(
-                        std::chrono::nanoseconds(lock_interval)
+                        std::chrono::nanoseconds(lock_interval_)
                         );
             }
         }
 
         void unlock(void) {
-            this->write_mutex.unlock();
+            this->write_mutex_.unlock();
         }
 
         void send(void) {
