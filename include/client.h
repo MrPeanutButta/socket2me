@@ -1,5 +1,5 @@
 /*
- * log2sockets
+ * socket
  * Copyright (C) log2 2013 - Present <aaron.hebert@log2.co>
  *
  * log2sockets is free software: you can redistribute it and/or modify it
@@ -19,96 +19,32 @@
 #ifndef TCP_CLIENT_H
 #define	TCP_CLIENT_H
 
-#include <mutex>
-#include <thread>
-#include <string>
-#include <netdb.h>
+#include <cstdint>
+#include "tcp.h"
 
-namespace log2 {
-    namespace tcp {
+namespace tcp {
 
-        // 128 bit type
-        typedef uint64_t* uint128_t;
+    // hash indexed redundant connection map
+    //typedef std::map<std::size_t, std::shared_ptr<ip_endpoint>> connections;
+    //typedef std::vector<std::size_t> connection_hashkey;
 
-        class client {
-        public:
+    typedef std::vector<std::shared_ptr<ip_point>> connections;
+    
+    class client : public socket {
+    private:
+        // hash of active connection
+        //std::size_t active_connection;
+        connections redundent_conns;
+        //connection_hashkey hashkey_conns;
 
-            client();
-            client(const client& orig);
+    public:
 
-            virtual ~client() = 0;
+        client(std::string key = "", auth auth_ = tcp::auth::OFF);
 
-            bool connect(const std::string host, const std::string port);
-            bool connect(void);
-            bool connected(void);
-
-            bool tx_buff_size(const size_t &);
-            bool rx_buff_size(const size_t &);
-
-            size_t read(void *data, const size_t size, const size_t count);
-            std::string readline(void);
-
-            uint128_t read128(void);
-            uint64_t read64(void);
-            uint32_t read32(void);
-            uint16_t read16(void);
-            uint8_t read8(void);
-
-            size_t write128(uint128_t bytes16);
-            size_t write64(uint64_t bytes8);
-            size_t write32(uint32_t bytes4);
-            size_t write16(uint16_t bytes2);
-
-            size_t write32(uint8_t byte1, uint8_t byte2, uint8_t byte3, uint8_t byte4);
-            size_t write24(uint8_t byte1, uint8_t byte2, uint8_t byte3);
-            size_t write16(uint8_t byte1, uint8_t byte2);
-            size_t write8(uint8_t byte);
-
-            size_t write(const uint8_t *bytes, size_t length);
-            size_t write(const void *data, size_t size, size_t count);
-            size_t write(std::string str);
-
-            int tx_flush(void);
-            int rx_flush(void);
-
-            void disconnect(void);
-            void reset(void);
-
-            void lock(void) {
-                while (!this->write_mutex.try_lock()) {
-                    std::this_thread::sleep_for(
-                            std::chrono::nanoseconds(lock_interval)
-                            );
-                }
-            }
-
-            void unlock(void) {
-                this->write_mutex.unlock();
-            }
-
-            void send(void) {
-                this->tx_flush();
-            }
-
-        private:
-            bool get_addr_info(const std::string host, const std::string port);
-
-            friend class server;
-
-            addrinfo hints;
-            addrinfo *results, *rp;
-
-            int socket_;
-            int rx_buffer_size;
-            int tx_buffer_size;
-
-            FILE *tx;
-            FILE *rx;
-
-            int lock_interval;
-            std::mutex write_mutex;
-        };
-    }
+        bool authenticate(std::string host, std::string port);
+        void add_failover(std::string host, std::string port);
+        bool failover(void);
+    };
 }
 
 #endif	/* TCP_CLIENT_H */
